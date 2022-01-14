@@ -1,94 +1,8 @@
 from __future__ import annotations
+from typing import Callable, Tuple
 import numpy as np
-import abc
-from typing import List, Optional, final
-
-class funcMeta(abc.ABCMeta):
-    def __repr__(cls):
-        return cls.func_name
-
-class Func(metaclass=funcMeta):
-    func_name = "Func"
-
-    @final
-    def __new__(cls, *args):
-        return cls.forward(*args)
-
-    @staticmethod
-    @abc.abstractmethod
-    def forward(*args):
-        pass
-
-    @staticmethod
-    @abc.abstractmethod
-    def backward(*args):
-        pass
-
-    @final
-    def __repr__(self):
-        return self.func_name
-
-class FuncNil(Func):
-    func_name = "Nil"
-    @staticmethod
-    def forward(*args):
-        return args
-    
-    @staticmethod
-    def backward(*args):
-        return 1
-
-class FuncMatmul(Func):
-    func_name = "Matmul"
-    @staticmethod
-    def forward(*args):
-        return args[0] @ args[1]
-
-    @staticmethod
-    def backward(*args):
-        return (args[1].T, args[0].T)
-
-
-def ufunc_to_func(ufunc: np.ufunc):
-    # This will redirect numpy ufunc to Func class...
-    if ufunc == np.matmul:
-        return FuncMatmul
-    return ufunc
-
-
-class CalcGraph:
-    def __init__(self, param: List[Optional[CalcGraph]], func: Func, tensor: Tensor):
-        self.param: List[Optional[CalcGraph]] = param
-        self.func: Func = func
-        self.tensor = tensor
-
-    def __repr__(self):
-        return f"<{self.func}, {self.param}>"
-    
-    def __call__(self):
-        return self.func(*[x() for x in self.param])
-
-    def backward(self, prop: np.ndarray):
-        self.tensor.grad = prop
-        backs = self.func.backward(*[x() for x in self.param])
-        self.param[0].backward(prop @ backs[0].view(np.ndarray))
-        self.param[1].backward(backs[1].view(np.ndarray) @ prop)
-
-
-class CalcGraphLeaf(CalcGraph):
-    def __init__(self, tensor: Tensor):
-        super().__init__([None], FuncNil, tensor)
-
-    def __repr__(self):
-        return f"Leaf {self.tensor}"
-
-    def __call__(self):
-        return np.asarray(self.tensor)
-
-    def backward(self, prop:np.ndarray):
-        self.tensor.grad = prop
-
-
+from func import *
+from calc_graph import *
 
 class Tensor(np.ndarray):
     # TODO: Refer to https://numpy.org/doc/stable/user/basics.subclassing.html for subclassing.
@@ -104,10 +18,22 @@ class Tensor(np.ndarray):
             self.calc_graph = CalcGraphLeaf(self)
         self.grad = None
 
-    def __array_wrap__(self, out_arr, context=None):
-        res = super().__array_wrap__(out_arr, context)
-        param = [x.calc_graph if isinstance(x, Tensor) else x.view(Tensor).calc_graph for x in context[1]]
-        func = ufunc_to_func(context[0])
+    def __array_wrap__(self, out_arr, context: Tuple[Callable, List[np.ndarray], int] | None=None):
+        print(f"{self=}, {out_arr=}, {context=}")
+        broadcasted = context[1]
+        if context[0].signature is None:
+            broadcasted: List[np.ndarray] = np.copy(np.broadcast_arrays(context[1]))
+
+        param = []
+        for i, next_array in enumerate(context[1]):
+            next_tensor = next_array.view(Tensor)
+            if isinstance(context[1][i], Tensor):
+                next_tensor.calc_graph = context[1][i].calc_graph
+
+        res: Tensor = super().__array_wrap__(out_arr, context)
+        param = [x.calc_graph if isinstance(x, Tensor) else np.asarray(x).view(Tensor).calc_graph for x in context[1]]
+        # take care of numpy broadcast?
+        func = FuncFactory.generate(context[0])
         res.calc_graph = CalcGraph(param, func, res)
         return res
 
@@ -118,21 +44,26 @@ class Tensor(np.ndarray):
     def backward(self):
         self.calc_graph.backward(np.ones_like(self))
 
+    def zero_grad(self):
+        self.calc_graph.zero_grad()
+
 
 if __name__ == "__main__":
-    test = Tensor([[1, 2], [3, 5]])
+    test = Tensor([[1, 2], [3, 4]])
     print("====")
     test2 = np.asarray([[5, 6], [7, 8]])
     print("====")
-    testres = test @ test2
-    print(f"{testres=}, {type(testres)=}")
-    print(f"{testres.calc_graph=}")
-    print("========")
-    print(testres())
-    print(type(testres()))
-    print(testres().calc_graph)
-    print("==========")
+    testres: Tensor = test @ test2 @ np.asarray([[9], [10]])
+    print(testres)
+    print(testres.calc_graph)
     testres.backward()
     print(test.grad)
 
+    testres.zero_grad()
+
+    test3 = test + 3
+    print(test3)
+    print(test3.calc_graph)
+    test3.backward()
+    print(test.grad)
     pass
