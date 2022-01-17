@@ -1,14 +1,14 @@
 from __future__ import annotations
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING, Type
 from func import *
 
 if TYPE_CHECKING:
     from tensor import Tensor
 
 class CalcGraph:
-    def __init__(self, param: List[Optional[CalcGraph]], func: Func, tensor: Tensor):
+    def __init__(self, param: List[Optional[CalcGraph]], func: Type[Func], tensor: Tensor):
         self.param: List[Optional[CalcGraph]] = param
-        self.func: Func = func
+        self.func: Type[Func] = func
         self.tensor = tensor
 
     def __repr__(self):
@@ -20,8 +20,8 @@ class CalcGraph:
     def backward(self, prop: np.ndarray):
         self.tensor.grad = prop
         backs = self.func.backward(prop, *[x() for x in self.param])
-        self.param[0].backward(backs[0].view(np.ndarray))
-        self.param[1].backward(backs[1].view(np.ndarray))
+        for next_param, next_back in zip(self.param, backs):
+            next_param.backward(next_back.view(np.ndarray))
     
     def zero_grad(self):
         self.tensor.grad = np.zeros_like(self.tensor)

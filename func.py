@@ -16,12 +16,12 @@ class Func(metaclass=FuncMeta):
 
     @staticmethod
     @abc.abstractmethod
-    def forward(*args: np.ndarray):
+    def forward(*args: np.ndarray) -> np.ndarray:
         pass
 
     @staticmethod
     @abc.abstractmethod
-    def backward(propa: np.ndarray, *args: np.ndarray):
+    def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
         pass
 
     @final
@@ -88,3 +88,47 @@ class FuncFactory:
                 return FuncSubtract
             case _:
                 return FuncNil
+
+def broadcast_func_class_maker(shape_before: tuple[int, ...], shape_after: tuple[int, ...]):
+    func_name = f"Broadcast({shape_before} -> {shape_after})"
+    def tuple_to_identifier(tuple_: tuple[int]):
+        str_ = str(tuple_)
+        str_ = str_.replace(" ", "")
+        str_ = str_.replace(",", "_")
+        str_ = str_.replace("(", "")
+        str_ = str_.replace(")", "")
+        return str_
+    class_name = f"FuncBroadcast_{tuple_to_identifier(shape_before)}__{tuple_to_identifier(shape_after)}"
+    @staticmethod
+    def forward(*args: np.ndarray) -> np.ndarray:
+        assert(len(args) == 1)
+        assert(args[0].shape == shape_before)
+        return np.copy(np.broadcast_to(args[0], shape_after))
+
+    @staticmethod
+    def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
+        shape_before_adjusted = shape_before
+        diff = len(shape_after) - len(shape_before)
+        if diff > 0:
+            shape_before_adjusted = tuple([1] * diff + list(shape_before))
+        reduce_dim = []
+        for i, next_size in enumerate(shape_before_adjusted):
+            if next_size == 1 and shape_after[i] != 1:
+                reduce_dim.append(i)
+        reduced = np.mean(propa, tuple(reduce_dim), keepdims=True)
+        return (np.squeeze(reduced, tuple(range(diff))),)
+
+    return type(class_name, (Func, ), {
+        'func_name': func_name,
+        'forward': forward,
+        'backward': backward,
+    })
+
+if __name__ == "__main__":
+    broadcast_func = broadcast_func_class_maker((2, 2), (2, 2, 2))
+    a = np.asarray([[2, 2], [2, 2]])
+    print(broadcast_func(a))
+    print("======")
+    grad = np.asarray([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
+    print(broadcast_func.backward(grad))
+    
