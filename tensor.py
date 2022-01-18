@@ -16,7 +16,7 @@ class Tensor(np.ndarray):
     def __array_finalize__(self, obj):
         if 'calc_graph' not in dir(self):
             self.calc_graph = CalcGraphLeaf(self)
-        self.grad = None
+        self.grad = np.zeros(self.shape)
 
     def broadcast_func(self, func: Callable, operand: List[np.ndarray]) -> List[np.ndarray]:
         if not isinstance(func, np.ufunc) or func.signature is None:
@@ -77,10 +77,18 @@ if __name__ == "__main__":
 
     testres.zero_grad()
 
-    test3 = test + 3
+    test3: Tensor = test + 3
     print("test 3")
     print(test3)
     print(test3.calc_graph)
     test3.backward()
+    print(test.grad)
+
+    test3.zero_grad()
+    
+    test4: Tensor = test @ test + test2 + test
+    print(test4)
+    print(test4.calc_graph)
+    test4.backward()
     print(test.grad)
     pass

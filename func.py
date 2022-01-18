@@ -59,7 +59,6 @@ class FuncAdd(Func):
 
     @staticmethod
     def backward(propa: np.ndarray, *args: np.ndarray):
-        print(f"{args[0].shape=}, {args[1].shape}, {propa.shape=}")
         assert(args[0].shape == args[1].shape == propa.shape)
         return (propa, propa)
 

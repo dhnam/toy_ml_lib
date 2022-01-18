@@ -18,7 +18,7 @@ class CalcGraph:
         return self.func(*[x() for x in self.param])
 
     def backward(self, prop: np.ndarray):
-        self.tensor.grad = prop
+        self.tensor.grad += prop
         backs = self.func.backward(prop, *[x() for x in self.param])
         for next_param, next_back in zip(self.param, backs):
             next_param.backward(next_back.view(np.ndarray))
@@ -40,7 +40,7 @@ class CalcGraphLeaf(CalcGraph):
         return np.asarray(self.tensor)
 
     def backward(self, prop:np.ndarray):
-        self.tensor.grad = prop
+        self.tensor.grad += prop
 
     def zero_grad(self):
         self.tensor.grad = np.zeros_like(self.tensor)
