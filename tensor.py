@@ -14,9 +14,10 @@ class Tensor(np.ndarray):
         return obj
 
     def __array_finalize__(self, obj):
+        print("Finalize", self)
         if 'calc_graph' not in dir(self):
             self.calc_graph = CalcGraphLeaf(self)
-        self.grad = np.zeros(self.shape)
+        self.grad = np.zeros(self.shape, dtype=np.float64)
 
     def broadcast_func(self, func: Callable, operand: List[np.ndarray]) -> List[np.ndarray]:
         if not isinstance(func, np.ufunc) or func.signature is None:
@@ -27,8 +28,6 @@ class Tensor(np.ndarray):
                         next_op = np.asarray(next_op).view(Tensor)
                 if next_op.shape != broadcast.shape:
                     broadcasted_tensor: Tensor = np.copy(np.broadcast_to(next_op, broadcast.shape)).view(Tensor)
-                    if not isinstance(next_op, Tensor):
-                        next_op = next_op.view(Tensor)
                     broadcasted_tensor.calc_graph = CalcGraph([next_op.calc_graph], broadcast_func_class_maker(next_op.shape, broadcast.shape), broadcasted_tensor)
                     return_arr.append(broadcasted_tensor)
                 else:
@@ -38,6 +37,7 @@ class Tensor(np.ndarray):
             return operand
 
     def __array_wrap__(self, out_arr, context: Tuple[Callable, List[np.ndarray], int] | None=None):
+        print(f"{context=}")
         broadcasted = self.broadcast_func(context[0], context[1])
 
         param = []
@@ -58,7 +58,7 @@ class Tensor(np.ndarray):
         return self
 
     def backward(self):
-        self.calc_graph.backward(np.ones_like(self))
+        self.calc_graph.backward(np.ones_like(self, dtype=np.float64))
 
     def zero_grad(self):
         self.calc_graph.zero_grad()
@@ -85,10 +85,21 @@ if __name__ == "__main__":
     print(test.grad)
 
     test3.zero_grad()
-    
+
     test4: Tensor = test @ test + test2 + test
     print(test4)
     print(test4.calc_graph)
     test4.backward()
+    print(test.grad)
+
+    test4.zero_grad()
+
+    print("=====")
+    test5: Tensor = test + test2
+    print("Make test 6")
+    test6 = test5.T
+    print(test6)
+    print(test6.calc_graph)
+    test6.backward()
     print(test.grad)
     pass

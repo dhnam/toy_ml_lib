@@ -1,4 +1,5 @@
 import abc
+from logging import warning
 from typing import final
 import numpy as np
 
@@ -74,6 +75,28 @@ class FuncSubtract(Func):
         assert(args[0].shape == args[1].shape == propa.shape)
         return (propa, -propa)
 
+class FuncMultiply(Func):
+    func_name = "Multiply"
+    @staticmethod
+    def forward(*args: np.ndarray) -> np.ndarray:
+        return args[0] * args[1]
+
+    @staticmethod
+    def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
+        assert(args[0].shape == args[1].shape == propa.shape)
+        return (propa * args[1], propa * args[0])
+
+class FuncTrueDivide(Func):
+    func_name = "TrueDivide"
+    @staticmethod
+    def forward(*args: np.ndarray) -> np.ndarray:
+        return args[0] / args[1]
+
+    @staticmethod
+    def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
+        assert(args[0].shape == args[1].shape == propa.shape)
+        return (propa / args[1], propa * args[0] / np.square(args[1]))
+
 
 class FuncFactory:
     @staticmethod
@@ -85,7 +108,12 @@ class FuncFactory:
                 return FuncAdd
             case np.subtract:
                 return FuncSubtract
-            case _:
+            case np.multiply:
+                return FuncMultiply
+            case np.true_divide:
+                return FuncTrueDivide
+            case x:
+                warning(x)
                 return FuncNil
 
 def broadcast_func_class_maker(shape_before: tuple[int, ...], shape_after: tuple[int, ...]):
@@ -114,7 +142,7 @@ def broadcast_func_class_maker(shape_before: tuple[int, ...], shape_after: tuple
         for i, next_size in enumerate(shape_before_adjusted):
             if next_size == 1 and shape_after[i] != 1:
                 reduce_dim.append(i)
-        reduced = np.mean(propa, tuple(reduce_dim), keepdims=True)
+        reduced = np.sum(propa, tuple(reduce_dim), keepdims=True)
         return (np.squeeze(reduced, tuple(range(diff))),)
 
     return type(class_name, (Func, ), {

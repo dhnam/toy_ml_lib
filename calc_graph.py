@@ -24,7 +24,7 @@ class CalcGraph:
             next_param.backward(next_back.view(np.ndarray))
     
     def zero_grad(self):
-        self.tensor.grad = np.zeros_like(self.tensor)
+        self.tensor.grad = np.zeros_like(self.tensor, dtype=np.float64)
         for next_param in self.param:
             next_param.zero_grad()
 
@@ -43,4 +43,4 @@ class CalcGraphLeaf(CalcGraph):
         self.tensor.grad += prop
 
     def zero_grad(self):
-        self.tensor.grad = np.zeros_like(self.tensor)
+        self.tensor.grad = np.zeros_like(self.tensor, dtype=np.float64)
