@@ -95,8 +95,27 @@ class FuncTrueDivide(Func):
     @staticmethod
     def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
         assert(args[0].shape == args[1].shape == propa.shape)
-        return (propa / args[1], propa * args[0] / np.square(args[1]))
+        return (propa / args[1], -(propa * args[0] / np.square(args[1])))
 
+class FuncTranspose(Func):
+    func_name = "Transpose"
+    @staticmethod
+    def forward(*args: np.ndarray) -> np.ndarray:
+        return args[0].T
+
+    @staticmethod
+    def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
+        return (propa.T,)
+
+class FuncNegative(Func):
+    func_name = "Negative"
+    @staticmethod
+    def forward(*args: np.ndarray) -> np.ndarray:
+        return -args[0]
+
+    @staticmethod
+    def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
+        return (-propa,)
 
 class FuncFactory:
     @staticmethod
@@ -112,6 +131,8 @@ class FuncFactory:
                 return FuncMultiply
             case np.true_divide:
                 return FuncTrueDivide
+            case np.negative:
+                return FuncNegative
             case x:
                 warning(x)
                 return FuncNil
