@@ -53,6 +53,7 @@ class Tensor(np.ndarray):
         return transposed_tensor
 
     def __array_wrap__(self, out_arr, context: Tuple[Callable, list[np.ndarray], int] | None=None):
+        print(context)
         broadcasted = self.broadcast_func(context[0], context[1])
 
         param = []
@@ -132,3 +133,12 @@ if __name__ == "__main__":
     print(y.calc_graph)
     y.backward()
     print(x.grad)
+
+    test7: Tensor = np.exp2(test)
+    test7.name = "test7"
+    print(test7)
+    print(test7.calc_graph)
+
+    test8: Tensor = np.concatenate([test, test2], axis=1).view(Tensor)
+    test8.name = "Test8"
+    print(test8)

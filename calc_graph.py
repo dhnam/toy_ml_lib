@@ -19,12 +19,14 @@ class CalcGraph:
     def __str__(self):
         ret_str = self.tensor.name + " " + str(self.value.shape)
         param_strs: list[tuple[str, int]] = []
+        glob_max_len = len(ret_str) + 1
         for next_param in self.param:
             next_str = str(next_param)
             max_len = 0
             for next_line in next_str.split("\n"):
                 if len(next_line) > max_len:
                     max_len = len(next_line)
+            max_len = max(max_len, glob_max_len)
             param_strs.append((next_str, max_len + 1))
         ret_str += " " * (sum([x[1] for x in param_strs]) - len(ret_str) - len(param_strs) - 1) + "│" + "\n"
         name_str = str(self.func)
