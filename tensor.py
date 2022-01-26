@@ -1,8 +1,9 @@
 from __future__ import annotations
-from typing import Callable, Tuple
+from typing import Callable
 import numpy as np
 from func import *
 from calc_graph import *
+from array_func import ArrFuncFactory
 
 tensorcount = 0
 class Tensor(np.ndarray):
@@ -26,6 +27,8 @@ class Tensor(np.ndarray):
             self.calc_graph = CalcGraphLeaf(self)
         self.grad = np.zeros(self.shape, dtype=np.float64)
         self.name = "tensor" + str(tensorcount)
+        if type(obj) is Tensor:
+            self.calc_graph = obj.calc_graph
         tensorcount += 1
 
 
@@ -52,8 +55,7 @@ class Tensor(np.ndarray):
         transposed_tensor.calc_graph = CalcGraph([self.calc_graph], FuncTranspose, transposed_tensor)
         return transposed_tensor
 
-    def __array_wrap__(self, out_arr, context: Tuple[Callable, list[np.ndarray], int] | None=None):
-        print(context)
+    def __array_wrap__(self, out_arr, context: tuple[Callable, list[np.ndarray], int] | None=None):
         broadcasted = self.broadcast_func(context[0], context[1])
 
         param = []
@@ -68,6 +70,16 @@ class Tensor(np.ndarray):
         func = FuncFactory.generate(context[0])
         res.calc_graph = CalcGraph(param, func, res)
         return res
+
+    def __array_function__(self, func, types, args, kwargs):
+        arr_func = ArrFuncFactory.generate(func, *args, **kwargs)
+        if arr_func is None:
+            return super().__array_function__(func, types, args, kwargs)
+
+        applied: Tensor = arr_func(*args, **kwargs).view(Tensor)
+        param = [x.calc_graph if isinstance(x, Tensor) else np.asarray(x).view(Tensor).calc_graph for x in args[0]]
+        applied.calc_graph = CalcGraph(param, arr_func, applied, kwargs)
+        return applied
 
     def __call__(self, obj=None):
         self.__array_finalize__(self.calc_graph())
@@ -142,3 +154,6 @@ if __name__ == "__main__":
     test8: Tensor = np.concatenate([test, test2], axis=1).view(Tensor)
     test8.name = "Test8"
     print(test8)
+    print(test8.calc_graph)
+    test8.backward()
+    print(test.grad)

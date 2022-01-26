@@ -1,7 +1,7 @@
 from __future__ import annotations
 import abc
 from logging import warning
-from typing import final, Callable, Type
+from typing import final, Callable
 import numpy as np
 
 class FuncFactory:
@@ -18,8 +18,9 @@ class FuncMeta(abc.ABCMeta):
     def __repr__(cls):
         return cls.func_name
 
+
 def implements(func: Callable):
-    def decorator(decorated: Type[Func]):
+    def decorator(decorated: type[Func]):
         FuncFactory.IMPL_FUNC[func] = decorated
     return decorator
 

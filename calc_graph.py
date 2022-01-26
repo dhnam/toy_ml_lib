@@ -1,17 +1,18 @@
 from __future__ import annotations
-from typing import Optional, TYPE_CHECKING, Type
+from typing import Optional, TYPE_CHECKING
 from func import *
 
 if TYPE_CHECKING:
     from tensor import Tensor
 
 class CalcGraph:
-    def __init__(self, param: list[Optional[CalcGraph]], func: Type[Func], tensor: Tensor):
+    def __init__(self, param: list[Optional[CalcGraph]], func: type[Func], tensor: Tensor, kwargs=None):
         self.param: list[Optional[CalcGraph]] = param
-        self.func: Type[Func] = func
+        self.func: type[Func] = func
         self.tensor = tensor
+        self.kwargs = kwargs if kwargs is not None else {}
         if param[0] is not None:
-            self.value = self.func(*[x.value for x in self.param])
+            self.value = self.func(*[x.value for x in self.param], **self.kwargs)
 
     def __repr__(self):
         return f"<{self.func}, {self.param}>"
@@ -20,6 +21,8 @@ class CalcGraph:
         ret_str = self.tensor.name + " " + str(self.value.shape)
         param_strs: list[tuple[str, int]] = []
         glob_max_len = len(ret_str) + 1
+        name_str = str(self.func)
+        glob_max_len = max(glob_max_len, len(name_str) + 1)
         for next_param in self.param:
             next_str = str(next_param)
             max_len = 0
@@ -27,9 +30,9 @@ class CalcGraph:
                 if len(next_line) > max_len:
                     max_len = len(next_line)
             max_len = max(max_len, glob_max_len)
+            glob_max_len = 0
             param_strs.append((next_str, max_len + 1))
         ret_str += " " * (sum([x[1] for x in param_strs]) - len(ret_str) - len(param_strs) - 1) + "│" + "\n"
-        name_str = str(self.func)
         ret_str += name_str
         is_first = True
         for next_str, next_len in param_strs:
@@ -71,7 +74,7 @@ class CalcGraph:
 
     def backward(self, prop: np.ndarray):
         self.tensor.grad += prop
-        backs = self.func.backward(prop, *[x.value for x in self.param])
+        backs = self.func.backward(prop, *[x.value for x in self.param], **self.kwargs)
         for next_param, next_back in zip(self.param, backs):
             next_param.backward(next_back.view(np.ndarray))
     
