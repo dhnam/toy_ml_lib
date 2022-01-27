@@ -41,7 +41,8 @@ class Tensor(np.ndarray):
                         next_op = np.asarray(next_op).view(Tensor)
                 if next_op.shape != broadcast.shape:
                     broadcasted_tensor: Tensor = np.copy(np.broadcast_to(next_op, broadcast.shape)).view(Tensor)
-                    broadcasted_tensor.calc_graph = CalcGraph([next_op.calc_graph], broadcast_func_class_maker(next_op.shape, broadcast.shape), broadcasted_tensor)
+                    broadcasted_tensor.calc_graph = CalcGraph([next_op.calc_graph], BroadcastFuncClassMaker(next_op.shape, broadcast.shape), broadcasted_tensor)
+                    print(BroadcastFuncClassMaker(next_op.shape, broadcast.shape))
                     return_arr.append(broadcasted_tensor)
                 else:
                     return_arr.append(next_op)
@@ -157,3 +158,11 @@ if __name__ == "__main__":
     print(test8.calc_graph)
     test8.backward()
     print(test.grad)
+
+    test_squeeze: Tensor = Tensor([[1, 2, 3, 4]], name="Test_squeeze")
+    test9: Tensor = np.squeeze(test_squeeze)
+    test9.name = "Test9"
+    print(test9)
+    print(test9.calc_graph)
+    test9.backward()
+    print(test_squeeze.grad)

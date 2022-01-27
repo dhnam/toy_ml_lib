@@ -1,7 +1,8 @@
 from __future__ import annotations
 import abc
 from logging import warning
-from typing import final, Callable
+from turtle import forward
+from typing import final, Callable, Any
 import numpy as np
 
 class FuncFactory:
@@ -18,6 +19,9 @@ class FuncMeta(abc.ABCMeta):
     def __repr__(cls):
         return cls.func_name
 
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+        return cls.forward(*args, **kwargs)
+
 
 def implements(func: Callable):
     def decorator(decorated: type[Func]):
@@ -28,18 +32,14 @@ def implements(func: Callable):
 class Func(metaclass=FuncMeta):
     func_name = "Func"
 
-    @final
-    def __new__(cls, *args):
-        return cls.forward(*args)
-
     @staticmethod
     @abc.abstractmethod
-    def forward(*args: np.ndarray) -> np.ndarray:
+    def forward(*args: np.ndarray, **kwargs) -> np.ndarray:
         pass
 
     @staticmethod
     @abc.abstractmethod
-    def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
+    def backward(propa: np.ndarray, *args: np.ndarray, **kwargs) -> tuple[np.ndarray]:
         pass
 
     @final
@@ -272,43 +272,88 @@ class FuncExp2(Func):
     def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
         return (propa * np.exp(args[0]) * np.log(2))
 
-def broadcast_func_class_maker(shape_before: tuple[int, ...], shape_after: tuple[int, ...]):
-    func_name = f"Broadcast({shape_before} -> {shape_after})"
-    def tuple_to_identifier(tuple_: tuple[int]):
-        str_ = str(tuple_)
-        str_ = str_.replace(" ", "")
-        str_ = str_.replace(",", "_")
-        str_ = str_.replace("(", "")
-        str_ = str_.replace(")", "")
-        return str_
-    class_name = f"FuncBroadcast_{tuple_to_identifier(shape_before)}__{tuple_to_identifier(shape_after)}"
-    @staticmethod
-    def forward(*args: np.ndarray) -> np.ndarray:
-        assert(len(args) == 1)
-        assert(args[0].shape == shape_before)
-        return np.copy(np.broadcast_to(args[0], shape_after))
+class FuncClassMakerMeta(type):
+    def __call__(cls, *args, **kwargs):
+        print(cls)
+        print(args)
+        obj = cls.__new__(cls)
+        obj.__init__(*args, **kwargs)
+        return obj.__call__(*args, **kwargs)
 
-    @staticmethod
-    def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
-        shape_before_adjusted = shape_before
-        diff = len(shape_after) - len(shape_before)
-        if diff > 0:
-            shape_before_adjusted = tuple([1] * diff + list(shape_before))
-        reduce_dim = []
-        for i, next_size in enumerate(shape_before_adjusted):
-            if next_size == 1 and shape_after[i] != 1:
-                reduce_dim.append(i)
-        reduced = np.sum(propa, tuple(reduce_dim), keepdims=True)
-        return (np.squeeze(reduced, tuple(range(diff))),)
 
-    return type(class_name, (Func, ), {
-        'func_name': func_name,
-        'forward': forward,
-        'backward': backward,
-    })
+class FuncClassMaker(metaclass=FuncClassMakerMeta):
+    @abc.abstractmethod
+    def args_to_class_name(self) -> str:
+        pass
+
+    @abc.abstractmethod
+    def make_forward(self) -> Callable[[Any], np.ndarray]:
+        pass
+
+    @abc.abstractmethod
+    def make_backward(self) -> Callable[[np.ndarray, Any], tuple[np.ndarray]]:
+        pass
+
+    @abc.abstractmethod
+    def args_to_func_name(self) -> str:
+        pass
+    
+    @final
+    def __call__(self, *args, **kwargs):
+        func_name = self.args_to_func_name()
+        class_name = self.args_to_class_name()
+        return type(class_name, (Func, ), {
+            'func_name': func_name,
+            'forward': self.make_forward(),
+            'backward': self.make_backward(),
+        })
+
+
+class BroadcastFuncClassMaker(FuncClassMaker):
+    def __init__(self, shape_before: tuple[int, ...], shape_after: tuple[int, ...]):
+        self.shape_before = shape_before
+        self.shape_after = shape_after
+
+    def args_to_class_name(self) -> str:
+        def tuple_to_identifier(tuple_: tuple[int]):
+            str_ = str(tuple_)
+            str_ = str_.replace(" ", "")
+            str_ = str_.replace(",", "_")
+            str_ = str_.replace("(", "")
+            str_ = str_.replace(")", "")
+            return str_
+        return f"FuncBroadcast_{tuple_to_identifier(self.shape_before)}__{tuple_to_identifier(self.shape_after)}"
+
+    def make_forward(self) -> Callable[[Any], np.ndarray]:
+        @staticmethod
+        def forward(*args: np.ndarray) -> np.ndarray:
+            assert(len(args) == 1)
+            assert(args[0].shape == self.shape_before)
+            return np.copy(np.broadcast_to(args[0], self.shape_after))
+
+        return forward
+
+    def make_backward(self) -> Callable[[np.ndarray, Any], tuple[np.ndarray]]:
+        @staticmethod
+        def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
+            shape_before_adjusted = self.shape_before
+            diff = len(self.shape_after) - len(self.shape_before)
+            if diff > 0:
+                shape_before_adjusted = tuple([1] * diff + list(self.shape_before))
+            reduce_dim = []
+            for i, next_size in enumerate(shape_before_adjusted):
+                if next_size == 1 and self.shape_after[i] != 1:
+                    reduce_dim.append(i)
+            reduced = np.sum(propa, tuple(reduce_dim), keepdims=True)
+            return (np.squeeze(reduced, tuple(range(diff))),)
+        
+        return backward
+
+    def args_to_func_name(self) -> str:
+        return f"Broadcast({self.shape_before} -> {self.shape_after})"
 
 if __name__ == "__main__":
-    broadcast_func = broadcast_func_class_maker((2, 2), (2, 2, 2))
+    broadcast_func = BroadcastFuncClassMaker((2, 2), (2, 2, 2))
     a = np.asarray([[2, 2], [2, 2]])
     print(broadcast_func(a))
     print("======")
