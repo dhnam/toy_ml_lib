@@ -1,7 +1,6 @@
 from __future__ import annotations
 import abc
 from logging import warning
-from turtle import forward
 from typing import final, Callable, Any
 import numpy as np
 
@@ -259,7 +258,7 @@ class FuncExp(Func):
     
     @staticmethod
     def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
-        return (propa * np.exp(args[0]))
+        return (np.where(np.isnan(propa * np.exp(args[0])), 0, propa * np.exp(args[0])),)
 
 @implements(np.exp2)
 class FuncExp2(Func):
@@ -274,8 +273,6 @@ class FuncExp2(Func):
 
 class FuncClassMakerMeta(type):
     def __call__(cls, *args, **kwargs):
-        print(cls)
-        print(args)
         obj = cls.__new__(cls)
         obj.__init__(*args, **kwargs)
         return obj.__call__(*args, **kwargs)

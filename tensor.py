@@ -10,7 +10,7 @@ class Tensor(np.ndarray):
     # TODO: Refer to https://numpy.org/doc/stable/user/basics.subclassing.html for subclassing.
     # Have to implement __array_ufunc__ to not actually calculate but make calc graph
     # It has CalcGraph in it.
-    def __new__(cls, array, name=None):
+    def __new__(cls, array, name=None, trainable=False):
         global tensorcount
         obj = np.asarray(array).view(cls)
         if name is None:
@@ -19,6 +19,7 @@ class Tensor(np.ndarray):
             obj.name = name
         
         tensorcount += 1
+        obj.trainable = trainable
         return obj
 
     def __array_finalize__(self, obj):
@@ -27,9 +28,13 @@ class Tensor(np.ndarray):
             self.calc_graph = CalcGraphLeaf(self)
         self.grad = np.zeros(self.shape, dtype=np.float64)
         self.name = "tensor" + str(tensorcount)
+        self.trainable = False
         if type(obj) is Tensor:
+            self.name = obj.name + "#"
             self.calc_graph = obj.calc_graph
-        tensorcount += 1
+            self.trainable = obj.trainable
+        else:
+            tensorcount += 1
 
 
     def broadcast_func(self, func: Callable, operand: list[np.ndarray]) -> list[np.ndarray]:
@@ -42,7 +47,6 @@ class Tensor(np.ndarray):
                 if next_op.shape != broadcast.shape:
                     broadcasted_tensor: Tensor = np.copy(np.broadcast_to(next_op, broadcast.shape)).view(Tensor)
                     broadcasted_tensor.calc_graph = CalcGraph([next_op.calc_graph], BroadcastFuncClassMaker(next_op.shape, broadcast.shape), broadcasted_tensor)
-                    print(BroadcastFuncClassMaker(next_op.shape, broadcast.shape))
                     return_arr.append(broadcasted_tensor)
                 else:
                     return_arr.append(next_op)
@@ -60,16 +64,20 @@ class Tensor(np.ndarray):
         broadcasted = self.broadcast_func(context[0], context[1])
 
         param = []
+        is_trainable = False
         for i, next_array in enumerate(broadcasted):
             next_tensor = next_array.view(Tensor)
             if isinstance(broadcasted[i], Tensor):
                 next_tensor.calc_graph = broadcasted[i].calc_graph
+                if broadcasted[i].trainable:
+                    is_trainable = True
 
         res: Tensor = super().__array_wrap__(out_arr, context)
         param = [x.calc_graph if isinstance(x, Tensor) else np.asarray(x).view(Tensor).calc_graph for x in broadcasted]
         # take care of numpy broadcast?
         func = FuncFactory.generate(context[0])
         res.calc_graph = CalcGraph(param, func, res)
+        res.trainable = is_trainable
         return res
 
     def __array_function__(self, func, types, args, kwargs):
@@ -78,7 +86,22 @@ class Tensor(np.ndarray):
             return super().__array_function__(func, types, args, kwargs)
 
         applied: Tensor = arr_func(*args, **kwargs).view(Tensor)
-        param = [x.calc_graph if isinstance(x, Tensor) else np.asarray(x).view(Tensor).calc_graph for x in args[0]]
+        is_trainable = False
+        if type(args[0]) in (list, tuple):
+            param = [x.calc_graph if isinstance(x, Tensor) else np.asarray(x).view(Tensor).calc_graph for x in args[0]]
+            for next_array in args[0]:
+                if isinstance(next_array, Tensor):
+                    if next_array.trainable:
+                        is_trainable = True
+        else:
+            if isinstance(args[0], Tensor):
+                param = args[0].calc_graph
+                if args[0].trainable:
+                    is_trainable = True
+            else:
+                param = np.asarray(args[0]).view(Tensor).calc_graph
+            param = [param]
+        applied.trainable = is_trainable
         applied.calc_graph = CalcGraph(param, arr_func, applied, kwargs)
         return applied
 
@@ -166,3 +189,38 @@ if __name__ == "__main__":
     print(test9.calc_graph)
     test9.backward()
     print(test_squeeze.grad)
+
+    test.zero_grad()
+
+    print(test)
+    test_avg: Tensor = np.average(test)
+    test_avg.name = "avg"
+    print("======")
+    print(test_avg)
+    print(test_avg.calc_graph)
+    test_avg.backward()
+    print(test.grad)
+    test_avg.zero_grad()
+
+    def sigmoid(x):
+        return 1. / (1. + np.exp(-x))
+
+    test_sigmoid = Tensor([[-1, 0, 1, 1000000]], name="test_sigmoid")
+    res_sigmoid = sigmoid(test_sigmoid)
+    print(res_sigmoid)
+    res_sigmoid.backward()
+    print(test_sigmoid.grad)
+    res_sigmoid.zero_grad()
+
+    test_a = np.average(np.square(test - test2))
+    print(test_a)
+    test_a.backward()
+    print(test.grad)
+    test_a.zero_grad()
+    
+    test_b = np.average(np.square(test2 - test))
+    print(test_b)
+    test_b.backward()
+    print(test.grad)
+    test_b.zero_grad()
+

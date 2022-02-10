@@ -37,7 +37,7 @@ class ConcatFuncClassMaker(FuncClassMaker):
             identifier = identifier.replace(" ", "_")
             identifier = identifier.replace("]", "")
             return identifier
-        return f"FuncBroadcast_axis{self.axis}_{concat_len_to_identifier(self.concat_len_list)}"
+        return f"FuncConcat_axis{self.axis}_{concat_len_to_identifier(self.concat_len_list)}"
 
     def args_to_func_name(self) -> str:
         return f"ArrFuncConcat (axis {self.axis})"
@@ -74,7 +74,7 @@ class SqueezeFuncClassMaker(FuncClassMaker):
             identifier = identifier.replace(",", "_")
             identifier = identifier.replace(")", "")
             return identifier
-        return f"FuncBroadcast_axis{self.axis}_{shape_to_identifier(self.shape)}"
+        return f"FuncSqueeze_axis{self.axis}_{shape_to_identifier(self.shape)}"
 
     def args_to_func_name(self) -> str:
         return f"ArrFuncSqueeze (axis {self.axis})"
@@ -91,3 +91,37 @@ class SqueezeFuncClassMaker(FuncClassMaker):
             return (np.reshape(propa, self.shape),)
         return backward
 
+
+@implements(np.average)
+class AvgFuncClassMaker(FuncClassMaker):
+    def __init__(self, arr: np.ndarray | Tensor, axis=None, weights=None, **kwargs):
+        self.arr = arr
+        self.axis = axis
+        self.weights = weights
+
+    def args_to_class_name(self) -> str:
+        return f"FuncAvg_axis{self.axis}_weight_is_none_{self.weights is None}"
+
+    def args_to_func_name(self) -> str:
+        return f"ArrFuncAvg (axis {self.axis}, weight_is_none: {self.weights is None})"
+
+    def make_forward(self) -> Callable[[Any], np.ndarray]:
+        @staticmethod
+        def forward(arr: np.ndarray | Tensor, axis=None, weights=None, **kwargs) -> np.ndarray:
+            ret = np.average(arr.view(np.ndarray), axis, weights)
+            if not isinstance(ret, np.ndarray):
+                ret = np.asarray(ret)
+            return ret
+        return forward
+    
+    def make_backward(self) -> Callable[[np.ndarray, Any], tuple[np.ndarray]]:
+        @staticmethod
+        def backward(propa: np.ndarray, *args, **kwargs) -> tuple[np.ndarray]:
+            if self.weights is None:
+                if self.axis is None:
+                    return (np.broadcast_to(propa, self.arr.shape),)
+                else:
+                    return (np.broadcast_to(np.expand_dims(propa, self.axis), self.arr.shape),)
+            else:
+                raise NotImplementedError
+        return backward

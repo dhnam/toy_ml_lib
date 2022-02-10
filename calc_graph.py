@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, TYPE_CHECKING
+from typing import Iterator, Optional, TYPE_CHECKING
 from func import *
 
 if TYPE_CHECKING:
@@ -9,16 +9,33 @@ class CalcGraph:
     def __init__(self, param: list[Optional[CalcGraph]], func: type[Func], tensor: Tensor, kwargs=None):
         self.param: list[Optional[CalcGraph]] = param
         self.func: type[Func] = func
-        self.tensor = tensor
+        self._tensor = tensor
         self.kwargs = kwargs if kwargs is not None else {}
         if param[0] is not None:
-            self.value = self.func(*[x.value for x in self.param], **self.kwargs)
+            self.cache = self.func(*[x.cache for x in self.param], **self.kwargs)
+
+    @property
+    def tensor(self):
+        return self._tensor
+
+    @tensor.setter
+    def tensor(self, val: np.ndarray | Tensor):
+        temp = self._tensor
+        np.copyto(self._tensor, val, casting='safe')
+        #self._tensor: Tensor = val
+        self._tensor.calc_graph = self
+        self._tensor.name = temp.name
+
+    def __iter__(self) -> Iterator[CalcGraph]:
+        return CalcGraphIterator(self)
 
     def __repr__(self):
         return f"<{self.func}, {self.param}>"
 
     def __str__(self):
-        ret_str = self.tensor.name + " " + str(self.value.shape)
+        ret_str = self.tensor.name + " " + str(self.cache.shape)
+        if self.tensor.trainable:
+            ret_str += " <T>"
         param_strs: list[tuple[str, int]] = []
         glob_max_len = len(ret_str) + 1
         name_str = str(self.func)
@@ -70,11 +87,13 @@ class CalcGraph:
         
     
     def __call__(self):
-        return self.value
+        if self.param[0] is not None:
+            self.cache = self.func(*[x() for x in self.param], **self.kwargs)
+        return self.cache
 
     def backward(self, prop: np.ndarray):
         self.tensor.grad += prop
-        backs = self.func.backward(prop, *[x.value for x in self.param], **self.kwargs)
+        backs = self.func.backward(prop, *[x() for x in self.param], **self.kwargs)
         for next_param, next_back in zip(self.param, backs):
             next_param.backward(next_back.view(np.ndarray))
     
@@ -87,19 +106,47 @@ class CalcGraph:
 class CalcGraphLeaf(CalcGraph):
     def __init__(self, tensor: Tensor):
         super().__init__([None], FuncNil, tensor)
-        self.value: np.ndarray = np.copy(tensor)
+        self.cache: np.ndarray = np.copy(tensor)
 
     def __repr__(self):
-        return f"{self.tensor.name} {self.tensor.shape}"
+        ret_str = f"{self.tensor.name} {self.tensor.shape}"
+        if self.tensor.trainable:
+            ret_str += " <T>"
+        return ret_str
 
     def __str__(self):
         return self.__repr__() + "│"
 
     def __call__(self):
-        return self.value
+        self.cache: np.ndarray = np.copy(self.tensor)
+        return self.cache
 
     def backward(self, prop:np.ndarray):
         self.tensor.grad += prop
 
     def zero_grad(self):
         self.tensor.grad = np.zeros_like(self.tensor, dtype=np.float64)
+
+
+class CalcGraphIterator:
+    def __init__(self, graph: CalcGraph):
+        self.graph = graph
+        self.visited = []
+        self.visit_stack: list[CalcGraph] = [self.graph]
+        self.curr_pos = self.graph
+
+    def __next__(self) -> CalcGraph:
+        if len(self.visit_stack) == 0:
+            raise StopIteration
+        
+        self.curr_pos = self.visit_stack.pop(0)
+        if self.curr_pos in self.visited:
+            return self.__next__()
+        if self.curr_pos.param != [None]:
+            for next_child in self.curr_pos.param:
+                self.visit_stack.insert(0, next_child)
+        self.visited.append(self.curr_pos)
+        return self.curr_pos
+
+    def __iter__(self):
+        return self
