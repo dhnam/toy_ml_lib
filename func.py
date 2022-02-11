@@ -9,7 +9,10 @@ class FuncFactory:
     @staticmethod
     def generate(ufunc: np.ufunc) -> Func:
         if ufunc in FuncFactory.IMPL_FUNC:
-            return FuncFactory.IMPL_FUNC[ufunc]
+            if not issubclass(FuncFactory.IMPL_FUNC[ufunc], FuncClassMaker):
+                return FuncFactory.IMPL_FUNC[ufunc]
+            else:
+                return FuncFactory.IMPL_FUNC[ufunc]()
         warning(ufunc)
         return FuncNil
         
@@ -349,6 +352,32 @@ class BroadcastFuncClassMaker(FuncClassMaker):
     def args_to_func_name(self) -> str:
         return f"Broadcast({self.shape_before} -> {self.shape_after})"
 
+@implements(np.maximum)
+class MaximumFuncClassMaker(FuncClassMaker):
+    def __init__(self, *args, **kwargs):
+        self.pos = None
+
+    def args_to_class_name(self) -> str:
+        return "FuncMaximum"
+
+    def make_forward(self) -> Callable[[Any], np.ndarray]:
+        @staticmethod
+        def forward(x1, x2, out=None, where=True):
+            ret = np.maximum(x1, x2, out=out, where=where)
+            self.pos = x1 >= x2
+            return ret
+        return forward
+
+    def make_backward(self) -> Callable[[np.ndarray, Any], tuple[np.ndarray]]:
+        @staticmethod
+        def backward(propa: np.ndarray, *args):
+            return (np.where(self.pos, propa, 0), np.where(np.invert(self.pos), propa, 0))
+        return backward
+
+    def args_to_func_name(self) -> str:
+        return "FuncMaximum"
+
+
 if __name__ == "__main__":
     broadcast_func = BroadcastFuncClassMaker((2, 2), (2, 2, 2))
     a = np.asarray([[2, 2], [2, 2]])
@@ -358,4 +387,8 @@ if __name__ == "__main__":
     print(broadcast_func.backward(grad))
 
     print(FuncFactory.IMPL_FUNC)
+    b = np.asarray([[1, 3], [1, 3]])
+    func = FuncFactory.generate(np.maximum)
+    print(func(a, b))
+    print(func.backward(np.asarray([[1, 2], [3, 4]])))
     

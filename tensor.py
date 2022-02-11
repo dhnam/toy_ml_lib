@@ -71,6 +71,7 @@ class Tensor(np.ndarray):
                 next_tensor.calc_graph = broadcasted[i].calc_graph
                 if broadcasted[i].trainable:
                     is_trainable = True
+                    pass
 
         res: Tensor = super().__array_wrap__(out_arr, context)
         param = [x.calc_graph if isinstance(x, Tensor) else np.asarray(x).view(Tensor).calc_graph for x in broadcasted]

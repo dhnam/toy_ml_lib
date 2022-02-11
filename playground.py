@@ -5,22 +5,37 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as anim
 from tqdm import tqdm
 
-base_x = np.random.rand(100, 1) * 200 - 100
+
+batch_size = 100
+
+base_x = np.random.rand(batch_size, 1) * 200 - batch_size
 base_y = base_x * base_x * 2 + base_x * 13 + 5
 
-x = Tensor(base_x + np.random.randn(100, 1) / 10)
+x = Tensor(base_x + np.random.randn(batch_size, 1) / 10)
 x.name = "x"
-y = Tensor(base_y + np.random.randn(100, 1) / 10)
+y = Tensor(base_y + np.random.randn(batch_size, 1) / 10)
 y.name = "y"
 
 lr = 1e-3
 losses = []
-layers = [Tensor(np.random.standard_normal((1, 10)), name="l1", trainable=True),
-          Tensor(np.random.standard_normal((10, 10)), name="l2", trainable=True),
-          Tensor(np.random.standard_normal((10, 1)), name="l3", trainable=True)]
+# np.random.uniform(-(1/np.sqrt()), (1/np.sqrt()), size=())
+layers = [Tensor(np.random.uniform(-(1/np.sqrt(1)), (1/np.sqrt(1)), size=(1, 10)), name="l1", trainable=True),
+          Tensor(np.random.uniform(-(1/np.sqrt(10)), (1/np.sqrt(10)), size=(10, 10)), name="l2", trainable=True),
+          Tensor(np.random.uniform(-(1/np.sqrt(10)), (1/np.sqrt(10)), size=(10, 1)), name="l3", trainable=True)]
+
+
+biases = [Tensor(np.random.uniform(-(1/np.sqrt(1)), (1/np.sqrt(1)), size=(10)), name="b1", trainable=True),
+          Tensor(np.random.uniform(-(1/np.sqrt(10)), (1/np.sqrt(10)), size=(10)), name="b2", trainable=True),
+          Tensor(np.random.uniform(-(1/np.sqrt(10)), (1/np.sqrt(10)), size=(1)), name="b3", trainable=True)]
 
 def sigmoid(x):
     return 1. / (1. + np.exp(-x))
+
+def ReLU(x):
+    return np.maximum(x, 0)
+
+def activation(x):
+    return ReLU(x)
 
 def MSE(pred, real) -> Tensor:
     return np.average(np.square(real - pred))
@@ -35,9 +50,9 @@ ims = []
 
 def test(num):
     test_input = Tensor(np.asarray([[num]]))
-    layer1 = sigmoid(test_input @ layers[0])
-    layer2 = sigmoid(layer1 @ layers[1])
-    out = layer2 @ layers[2]
+    layer1 = activation(test_input @ layers[0] + biases[0])
+    layer2 = activation(layer1 @ layers[1] + biases[1])
+    out = layer2 @ layers[2] + biases[2]
     return out
 
 def func(num):
@@ -49,34 +64,84 @@ np.seterr(all="ignore")
 def train(num):
     global losses
     tbar = tqdm(range(num))
-    for _ in tbar:
-        layer1 = sigmoid(x @ layers[0])
+    a = ""
+    for i in tbar:
+        layer1 = activation(x @ layers[0] + biases[0])
         layer1.name = "layer1"
-        layer2 = sigmoid(layer1 @ layers[1])
+        layer2 = activation(layer1 @ layers[1] + biases[1])
         layer2.name = "layer2"
-        out: Tensor = layer2 @ layers[2]
+        out: Tensor = layer2 @ layers[2] + biases[2]
         out.name = "out"
+
         out_cp = out.copy()
         loss: Tensor = MSE(out, y)
         loss.name = "loss"
         losses.append(loss.copy())
-        tbar.set_description(f"loss={losses[-1].tolist()},val={out.flatten()[5]}, calc_graph={loss.calc_graph.param[0].param[0].param[1].tensor.flatten()[5]}, grad={out.grad.flatten()[5]}"
-                            f", same_id={id(out) == id(loss.calc_graph.param[0].param[0].param[1].tensor)}")
         optim = GradientDescentOptimizer(loss, lr)
-        optim.step()
+        loss.backward()
+        tbar.set_description(f"loss={losses[-1].tolist()},val={out.flatten()[0]}, calc_graph={loss.calc_graph.param[0].param[0].param[1].tensor.flatten()[0]}, grad={out.grad.flatten()[0]}"
+                            f", same_id={id(out) == id(loss.calc_graph.param[0].param[0].param[1].tensor)}")
+        optim.step(backward=False)
 
         im1, = ax1.plot([x.tolist() for x in losses], "r")
         y_pred = [test(x).tolist()[0][0] for x in x_axe]
         im2, im3 = ax2.plot(x_axe, y_real, 'r', x_axe, y_pred, 'b')
+        # im2.axes.set_ylim(np.min(y_real) - i * 100, np.max(y_real) + i * 100)
+        # im3.axes.set_ylim(np.min(y_real) - i * 100, np.max(y_real) + i * 100)
         # im2 = ax2.scatter(x.view(np.ndarray), out_cp.view(np.ndarray), c='b')
         # im3 = ax2.scatter(x.view(np.ndarray), y.view(np.ndarray), c='r')
         ims.append([im1, im2, im3])
-    print(loss.calc_graph)
+        # print("\n========\n")
 
 
+    # print(loss.calc_graph)
 
-train(100)
+def train_step(i, ims):
+    global layers
+    layer1 = activation(x @ layers[0] + biases[0])
+    layer1.name = "layer1"
+    layer2 = activation(layer1 @ layers[1] + biases[1])
+    layer2.name = "layer2"
+    out: Tensor = layer2 @ layers[2] + biases[2]
+    out.name = "out"
 
-ani = anim.ArtistAnimation(fig, ims, interval=50)
+    out_cp = out.copy()
+    loss: Tensor = MSE(out, y)
+    loss.name = "loss"
+    losses.append(loss.copy())
+    optim = GradientDescentOptimizer(loss, lr)
+    loss.backward()
+    # tbar.set_description(f"loss={losses[-1].tolist()},val={out.flatten()[0]}, calc_graph={loss.calc_graph.param[0].param[0].param[1].tensor.flatten()[0]}, grad={out.grad.flatten()[0]}"
+                        # f", same_id={id(out) == id(loss.calc_graph.param[0].param[0].param[1].tensor)}")
+    optim.step(backward=False)
+
+    im1, = ax1.plot([x.tolist() for x in losses], "r")
+    ims[0].update_from(im1)
+    # ims[0].set_data(im1.get_xdata(), im1.get_ydata())
+    y_pred = [test(x).tolist()[0][0] for x in x_axe]
+    ax2.set_ylim(np.min([y_real, y_pred]), np.max([y_real, y_pred]))
+    min_, max_ = ax2.get_ylim()
+    range_ = max_ - min_
+    ax2.set_ylim(min_ - range_ / 10, max_ + range_ / 10)
+    im2, im3 = ax2.plot(x_axe, y_real, 'r', x_axe, y_pred, 'b')
+    ims[2].update_from(im3)
+    # ims[2].set_data(im3.get_xdata(), im3.get_ydata())
+    # im2.axes.set_ylim(np.min(y_real) - i * 100, np.max(y_real) + i * 100)
+    # im3.axes.set_ylim(np.min(y_real) - i * 100, np.max(y_real) + i * 100)
+    # im2 = ax2.scatter(x.view(np.ndarray), out_cp.view(np.ndarray), c='b')
+    # im3 = ax2.scatter(x.view(np.ndarray), y.view(np.ndarray), c='r')
+    # ims.append([im1, im2, im3])
+    # print("\n========\n")
+    return ims[0], ims[2]
+
+# train(100)
+
+im1, = ax1.plot([x.tolist() for x in losses], "r")
+im2, im3 = ax2.plot(x_axe, y_real, 'r', x_axe, y_real, 'b')
+
+ani = anim.FuncAnimation(plt.gcf(), train_step, tqdm(range(100)), interval=50, fargs=([im1, im2, im3],), blit=False)
 
 plt.show()
+
+# ani = anim.ArtistAnimation(fig, ims, interval=50)
+# plt.show()
