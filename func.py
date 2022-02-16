@@ -152,6 +152,17 @@ class FuncSquare(Func):
     def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
         return (2 * args[0] * propa,)
 
+@implements(np.sqrt)
+class FuncSqrt(Func):
+    func_name = "Sqrt"
+    @staticmethod
+    def forward(*args: np.ndarray) -> np.ndarray:
+        return np.sqrt(args[0])
+
+    @staticmethod
+    def backward(propa: np.ndarray, *args: np.ndarray) -> tuple[np.ndarray]:
+        return (1/(2 * np.sqrt(args[0])) * propa,)
+
 
 @implements(np.log)
 class FuncLog(Func):

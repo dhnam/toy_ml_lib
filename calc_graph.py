@@ -91,6 +91,10 @@ class CalcGraph:
             self.cache = self.func(*[x() for x in self.param], **self.kwargs)
         return self.cache
 
+    
+    def __hash__(self):
+        return hash(str(self.func))
+
     def backward(self, prop: np.ndarray):
         self.tensor.grad += prop
         backs = self.func.backward(prop, *[x() for x in self.param], **self.kwargs)

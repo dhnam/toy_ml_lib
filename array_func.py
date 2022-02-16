@@ -119,9 +119,9 @@ class AvgFuncClassMaker(FuncClassMaker):
         def backward(propa: np.ndarray, *args, **kwargs) -> tuple[np.ndarray]:
             if self.weights is None:
                 if self.axis is None:
-                    return (np.broadcast_to(propa, self.arr.shape),)
+                    return (np.broadcast_to(propa / np.prod(self.arr.shape), self.arr.shape),)
                 else:
-                    return (np.broadcast_to(np.expand_dims(propa, self.axis), self.arr.shape),)
+                    return (np.broadcast_to(np.expand_dims(propa / self.arr[self.axis], self.axis), self.arr.shape),)
             else:
                 raise NotImplementedError
         return backward

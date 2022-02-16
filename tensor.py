@@ -70,7 +70,7 @@ class Tensor(np.ndarray):
             if isinstance(broadcasted[i], Tensor):
                 next_tensor.calc_graph = broadcasted[i].calc_graph
                 if broadcasted[i].trainable:
-                    is_trainable = True
+                    # is_trainable = True
                     pass
 
         res: Tensor = super().__array_wrap__(out_arr, context)
