@@ -5,6 +5,14 @@ from func import *
 if TYPE_CHECKING:
     from tensor import Tensor
 
+
+class CalcGraphFactory:
+    @classmethod
+    def make_graph(cls, param: list[Optional[CalcGraph]], func: type[Func], tensor: Tensor, kwargs=None) -> CalcGraph:
+        if tensor.graph_included:
+            return CalcGraph(param, func, tensor, kwargs)
+        return CalcGraphLeaf(tensor)
+
 class CalcGraph:
     def __init__(self, param: list[Optional[CalcGraph]], func: type[Func], tensor: Tensor, kwargs=None):
         self.param: list[Optional[CalcGraph]] = param
@@ -100,6 +108,8 @@ class CalcGraph:
         backs = self.func.backward(prop, *[x() for x in self.param], **self.kwargs)
         for next_param, next_back in zip(self.param, backs):
             next_param.backward(next_back.view(np.ndarray))
+        if not self.tensor.trainable:
+            self.tensor.grad = np.zeros_like(self.tensor, dtype=np.float64)
     
     def zero_grad(self):
         self.tensor.grad = np.zeros_like(self.tensor, dtype=np.float64)

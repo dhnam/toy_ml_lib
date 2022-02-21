@@ -1,27 +1,40 @@
 from typing import final
 from calc_graph import CalcGraph
 from tensor import Tensor
+from model import Model
 import abc
 import numpy as np
 
 class Optimizer(abc.ABC):
-    def __init__(self, loss_tensor:Tensor, lr=0.001):
-        self.loss_tensor = loss_tensor
+    def __init__(self, input_:Tensor | Model, lr=0.001):
+        self.params: list[CalcGraph] = []
+        self.need_param_init = False
+        if isinstance(input_, Tensor):
+            loss_tensor = input_
+            for next_graph in loss_tensor.calc_graph:
+                if next_graph.tensor.trainable:
+                    self.params.append(next_graph)
+        else:
+            assert(isinstance(input_, Model))
+            self.model = input_
+            self.need_param_init = True
+
         self.lr = lr
     
     @final
-    def step(self, backward=True, zero_grad=True):
-        if backward:
-            self.loss_tensor.backward()
+    def step(self, zero_grad=True):
+        if self.need_param_init:
+            self.params.extend(x.calc_graph for x in self.model.trainable_param)
+            self.need_param_init = False
 
-        for next_graph in self.loss_tensor.calc_graph:
-            if next_graph.tensor.trainable:
-                next_graph.tensor = self.optimize(next_graph.tensor)
-                # print()
+        for next_graph in self.params:
+            next_graph.tensor = self.optimize(next_graph.tensor)
+            # print()
             # print(np.asarray(next_graph.tensor.view(np.ndarray)).flat[-1])
 
         if zero_grad:
-            self.loss_tensor.zero_grad()
+            for next_graph in self.params:
+                next_graph.zero_grad()
 
     @staticmethod
     def optimize(self, next_tensor: Tensor) -> np.ndarray:
@@ -37,8 +50,8 @@ class GradientDescentOptimizer(Optimizer):
         return next_tensor - self.lr * next_tensor.grad
 
 class MomentumOptimizer(Optimizer):
-    def __init__(self, loss_tensor: Tensor, lr=0.001, momentum=0.9):
-        super().__init__(loss_tensor, lr)
+    def __init__(self, input_:Tensor | Model, lr=0.001, momentum=0.9):
+        super().__init__(input_, lr)
         self.momentum_dict: dict[CalcGraph, np.ndarray] = {}
         self.momentum = momentum
 
@@ -51,8 +64,8 @@ class MomentumOptimizer(Optimizer):
         return next_tensor - self.lr * self.momentum_dict[next_graph]
 
 class NAGOptimizer(Optimizer):
-    def __init__(self, loss_tensor: Tensor, lr=0.001, momentum=0.9):
-        super().__init__(loss_tensor, lr)
+    def __init__(self, input_:Tensor | Model, lr=0.001, momentum=0.9):
+        super().__init_(input_, lr)
         self.momentum_dict: dict[CalcGraph, np.ndarray] = {}
         self.grad_before: dict[CalcGraph, np.ndarray] = {}
         self.momentum = momentum
@@ -74,8 +87,8 @@ class NAGOptimizer(Optimizer):
 
 
 class AdaGradOptimizer(Optimizer):
-    def __init__(self, loss_tensor: Tensor, lr=0.01, eps=1e-10):
-        super().__init__(loss_tensor, lr)
+    def __init__(self, input_:Tensor | Model, lr=0.01, eps=1e-10):
+        super().__init__(input_, lr)
         self.sum_dict: dict[CalcGraph, np.ndarray] = {} # G
         self.eps = eps
 
@@ -89,8 +102,8 @@ class AdaGradOptimizer(Optimizer):
 
 
 class RMSPropOptimizer(Optimizer):
-    def __init__(self, loss_tensor: Tensor, lr=0.01, alpha=0.99, eps=1e-8):
-        super().__init__(loss_tensor, lr)
+    def __init__(self, input_:Tensor | Model, lr=0.01, alpha=0.99, eps=1e-8):
+        super().__init__(input_, lr)
         self.sum_dict: dict[CalcGraph, np.ndarray] = {} # G
         self.alpha = alpha
         self.eps = eps
@@ -105,8 +118,8 @@ class RMSPropOptimizer(Optimizer):
 
 
 class AdamOptimizer(Optimizer):
-    def __init__(self, loss_tensor: Tensor, lr=0.001, beta1=0.9, beta2=0.999, eps=1e-8):
-        super().__init__(loss_tensor, lr)
+    def __init__(self, input_:Tensor | Model, lr=0.001, beta1=0.9, beta2=0.999, eps=1e-8):
+        super().__init__(input_, lr)
         self.momentum_dict: dict[CalcGraph, np.ndarray] = {}
         self.velocity_dict: dict[CalcGraph, np.ndarray] = {} # G
         self.beta1 = beta1

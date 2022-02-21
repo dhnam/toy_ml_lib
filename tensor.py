@@ -20,6 +20,9 @@ class Tensor(np.ndarray):
         
         tensorcount += 1
         obj.trainable = trainable
+        obj.graph_included = False
+        if trainable:
+            obj.graph_included = True
         return obj
 
     def __array_finalize__(self, obj):
@@ -29,10 +32,12 @@ class Tensor(np.ndarray):
         self.grad = np.zeros(self.shape, dtype=np.float64)
         self.name = "tensor" + str(tensorcount)
         self.trainable = False
+        self.graph_included = False
         if type(obj) is Tensor:
             self.name = obj.name + "#"
             self.calc_graph = obj.calc_graph
-            self.trainable = obj.trainable
+            # self.trainable = obj.trainable
+            self.graph_included = obj.graph_included
         else:
             tensorcount += 1
 
@@ -46,7 +51,8 @@ class Tensor(np.ndarray):
                         next_op = np.asarray(next_op).view(Tensor)
                 if next_op.shape != broadcast.shape:
                     broadcasted_tensor: Tensor = np.copy(np.broadcast_to(next_op, broadcast.shape)).view(Tensor)
-                    broadcasted_tensor.calc_graph = CalcGraph([next_op.calc_graph], BroadcastFuncClassMaker(next_op.shape, broadcast.shape), broadcasted_tensor)
+                    broadcasted_tensor.graph_included = next_op.graph_included
+                    broadcasted_tensor.calc_graph = CalcGraphFactory.make_graph([next_op.calc_graph], BroadcastFuncClassMaker(next_op.shape, broadcast.shape), broadcasted_tensor)
                     return_arr.append(broadcasted_tensor)
                 else:
                     return_arr.append(next_op)
@@ -57,28 +63,31 @@ class Tensor(np.ndarray):
     @property
     def T(self):
         transposed_tensor: Tensor = np.copy(self.transpose(), subok=True)
-        transposed_tensor.calc_graph = CalcGraph([self.calc_graph], FuncTranspose, transposed_tensor)
+        transposed_tensor.calc_graph = CalcGraphFactory.make_graph([self.calc_graph], FuncTranspose, transposed_tensor)
         return transposed_tensor
 
     def __array_wrap__(self, out_arr, context: tuple[Callable, list[np.ndarray], int] | None=None):
         broadcasted = self.broadcast_func(context[0], context[1])
 
         param = []
-        is_trainable = False
-        for i, next_array in enumerate(broadcasted):
-            next_tensor = next_array.view(Tensor)
-            if isinstance(broadcasted[i], Tensor):
-                next_tensor.calc_graph = broadcasted[i].calc_graph
-                if broadcasted[i].trainable:
-                    # is_trainable = True
-                    pass
+        is_graph_included = False
+        for next_array in broadcasted:
+            # if not isinstance(next_array, Tensor):
+            #     next_tensor = next_array.view(Tensor)
+            # else:
+            #     next_tensor = next_array
+            if isinstance(next_array, Tensor):
+            #     next_tensor.calc_graph = next_array.calc_graph
+                if next_array.graph_included:
+                    is_graph_included = True
+            #         pass
 
         res: Tensor = super().__array_wrap__(out_arr, context)
+        res.graph_included = is_graph_included
         param = [x.calc_graph if isinstance(x, Tensor) else np.asarray(x).view(Tensor).calc_graph for x in broadcasted]
         # take care of numpy broadcast?
         func = FuncFactory.generate(context[0])
-        res.calc_graph = CalcGraph(param, func, res)
-        res.trainable = is_trainable
+        res.calc_graph = CalcGraphFactory.make_graph(param, func, res)
         return res
 
     def __array_function__(self, func, types, args, kwargs):
@@ -87,23 +96,23 @@ class Tensor(np.ndarray):
             return super().__array_function__(func, types, args, kwargs)
 
         applied: Tensor = arr_func(*args, **kwargs).view(Tensor)
-        is_trainable = False
+        is_graph_included = False
         if type(args[0]) in (list, tuple):
             param = [x.calc_graph if isinstance(x, Tensor) else np.asarray(x).view(Tensor).calc_graph for x in args[0]]
             for next_array in args[0]:
                 if isinstance(next_array, Tensor):
-                    if next_array.trainable:
-                        is_trainable = True
+                    if next_array.graph_included:
+                        is_graph_included = True
         else:
             if isinstance(args[0], Tensor):
                 param = args[0].calc_graph
-                if args[0].trainable:
-                    is_trainable = True
+                if args[0].graph_included:
+                    is_graph_included = True
             else:
                 param = np.asarray(args[0]).view(Tensor).calc_graph
             param = [param]
-        applied.trainable = is_trainable
-        applied.calc_graph = CalcGraph(param, arr_func, applied, kwargs)
+        applied.graph_included = is_graph_included
+        applied.calc_graph = CalcGraphFactory.make_graph(param, arr_func, applied, kwargs)
         return applied
 
     def __call__(self, obj=None):
