@@ -1,11 +1,37 @@
-from typing import final
+from __future__ import annotations
+from typing import final, TYPE_CHECKING
 import numpy as np
 import abc
 from tensor import Tensor
-from layer import Layer
+if TYPE_CHECKING:
+    from layer import Layer
 
+class ParamScanner:
+    def scan_param(self) -> list[Tensor]:
+        trainable_param = []
+        for next_name in dir(self):
+            next_attr = getattr(self, next_name)
+            trainable_param.extend(self._scan_attr_param(next_attr))
 
-class Model(abc.ABC):
+        return trainable_param
+
+    def _scan_attr_param(self, attr) -> list:
+        if isinstance(attr, Tensor) and attr.trainable:
+            return [attr]
+        elif isinstance(attr, ParamScanner):
+            return attr.scan_param()
+        else:
+            params = []
+            try:
+                for next_item in attr:
+                    if next_item is attr:
+                       continue
+                    params.extend(self._scan_attr_param(next_item))
+            except TypeError:
+                pass
+            return params
+        
+class Model(abc.ABC, ParamScanner):
     def __init__(self):
         self.trainable_param: list[Tensor] | None = None
         pass
@@ -17,23 +43,7 @@ class Model(abc.ABC):
     @final
     def _apply(self, *args, **kwargs):
         if self.trainable_param is None:
-            self.trainable_param = []
-            for next_name in dir(self):
-                if next_name == "trainable_param":
-                    continue
-                if isinstance(next_attr := getattr(self, next_name), Tensor) and next_attr.trainable:
-                    self.trainable_param.append(next_attr)
-                elif isinstance(next_attr, Layer):
-                    self.trainable_param.extend(next_attr.get_trainalbe_param())
-                else:
-                    try:
-                        for next_item in next_attr:
-                            if isinstance(next_item, Tensor) and next_item.trainable:
-                                self.trainable_param.append(next_item)
-                            elif isinstance(next_item, Layer):
-                                self.trainable_param.extend(next_item.get_trainalbe_param())
-                    except TypeError:
-                        pass
+            self.trainable_param = self.scan_param()
         # Check something
         return self.apply(*args, **kwargs)
 
@@ -46,9 +56,6 @@ class SequentialModel(Model):
         super().__init__()
         self.layers = layers
         last_size = 1
-        for layer in layers:
-            layer._layer_init(last_size)
-            last_size = layer.shape
 
     def apply(self, x: Tensor) -> Tensor:
         for next_layer in self.layers:
