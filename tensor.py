@@ -3,7 +3,7 @@ from typing import Callable
 import numpy as np
 from func import *
 from calc_graph import *
-from array_func import ArrFuncFactory
+from array_func import ArrFuncFactory, Convolution
 
 tensorcount = 0
 class Tensor(np.ndarray):
@@ -43,9 +43,13 @@ class Tensor(np.ndarray):
 
 
     def broadcast_func(self, func: Callable, operand: list[np.ndarray]) -> list[np.ndarray]:
+        #print(func)
         if not isinstance(func, np.ufunc) or func.signature is None:
             return_arr: list[Tensor] = []
+            #print([operand_.shape for operand_ in operand if isinstance(operand_, np.ndarray)])
             broadcast = np.broadcast(*operand)
+            #print(broadcast.shape)
+            #print(operand)
             for next_op in operand:
                 if not isinstance(next_op, Tensor):
                         next_op = np.asarray(next_op).view(Tensor)
@@ -56,6 +60,7 @@ class Tensor(np.ndarray):
                     return_arr.append(broadcasted_tensor)
                 else:
                     return_arr.append(next_op)
+            #print([x.shape for x in return_arr])
             return return_arr
         else:
             return operand
@@ -104,16 +109,21 @@ class Tensor(np.ndarray):
                     if next_array.graph_included:
                         is_graph_included = True
         else:
-            if isinstance(args[0], Tensor):
-                param = args[0].calc_graph
-                if args[0].graph_included:
-                    is_graph_included = True
-            else:
-                param = np.asarray(args[0]).view(Tensor).calc_graph
-            param = [param]
+            param = []
+            for next_arg in args:
+                if isinstance(next_arg, Tensor):
+                    next_param = next_arg.calc_graph
+                    if next_arg.graph_included:
+                        is_graph_included = True
+                else:
+                    next_param = np.asarray(next_arg).view(Tensor).calc_graph
+                param.append(next_param)
         applied.graph_included = is_graph_included
         applied.calc_graph = CalcGraphFactory.make_graph(param, arr_func, applied, kwargs)
         return applied
+
+    def call_manual_func(self, func, *args, **kwargs):
+        return self.__array_function__(func, [], args, kwargs)
 
     def __call__(self, obj=None):
         self.__array_finalize__(self.calc_graph())
